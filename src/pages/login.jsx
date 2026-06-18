@@ -46,6 +46,9 @@ function Login(props) {
 				/>
 				<br /><br />
 			<button type="submit">Submit</button>
+			<button> 
+				<Link to="/dashboard"> back </Link>
+			</button>
 			</form>
 		</div>
 	)
