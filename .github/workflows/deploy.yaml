@@ -1,0 +1,80 @@
+name: Deploy React App To AWS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker Image
+        run: |
+          docker build -t react-app .
+
+      - name: Tag Docker Image
+        run: |
+          docker tag react-app:latest ${{ secrets.ECR_REPOSITORY }}:latest
+
+      - name: Verify Docker Images
+        run: |
+          docker images
+
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.ECR_REPOSITORY }}:latest
+
+      - name: Deploy To EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+
+          script: |
+            set -e
+
+            echo "Login to ECR"
+
+            aws ecr get-login-password \
+            --region ${{ secrets.AWS_REGION }} \
+            | docker login \
+            --username AWS \
+            --password-stdin \
+            $(echo "${{ secrets.ECR_REPOSITORY }}" | cut -d'/' -f1)
+
+            echo "Pull latest image"
+
+            docker pull ${{ secrets.ECR_REPOSITORY }}:latest
+
+            echo "Stop old container"
+
+            docker stop react-app || true
+            docker rm react-app || true
+
+            echo "Run new container"
+
+            docker run -d \
+              --name react-app \
+              --restart unless-stopped \
+              -p 80:80 \
+              ${{ secrets.ECR_REPOSITORY }}:latest
+
+            docker ps
+
+            echo "Deployment completed"
